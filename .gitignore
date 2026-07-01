@@ -3,3 +3,4 @@ mlruns/
 *.pkl
 __pycache__/
 .env
+models/
