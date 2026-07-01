@@ -2,6 +2,9 @@ import os
 import pickle
 import logging
 import time
+import sqlite3
+from datetime import datetime
+from typing import List
 from contextlib import asynccontextmanager
 
 import numpy as np
@@ -40,6 +43,8 @@ async def lifespan(app: FastAPI):
         feature_names = pickle.load(f)
 
     logger.info(f"Model loaded. Features: {len(feature_names)}")
+    init_db()
+    logger.info("Database initialized.")
     yield
     logger.info("Shutting down.")
 
@@ -83,6 +88,39 @@ class HealthResponse(BaseModel):
     model: str
     features: int
 
+# ── SQLite prediction logging ─────────────────────────────────────────────────
+# Why SQLite? Lightweight, no server needed, perfect for a single-instance
+# deployment. Week 7 drift detection will query this table.
+DB_PATH = "predictions.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            fraud_probability REAL,
+            is_fraud INTEGER,
+            risk_level TEXT,
+            amount REAL,
+            latency_ms REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def log_prediction(fraud_prob: float, is_fraud: bool, risk_level: str,
+                   amount: float, latency_ms: float):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT INTO predictions
+        (timestamp, fraud_probability, is_fraud, risk_level, amount, latency_ms)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (datetime.utcnow().isoformat(), fraud_prob, int(is_fraud),
+          risk_level, amount, latency_ms))
+    conn.commit()
+    conn.close()
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
@@ -121,6 +159,7 @@ async def predict(transaction: TransactionFeatures):
 
     latency_ms = (time.time() - start) * 1000
     logger.info(f"Prediction: prob={fraud_prob:.4f} risk={risk_level} latency={latency_ms:.2f}ms")
+    log_prediction(fraud_prob, fraud_prob >= 0.5, risk_level,transaction.Amount, latency_ms)
 
     return PredictionResponse(
         fraud_probability=round(fraud_prob, 6),
@@ -128,3 +167,82 @@ async def predict(transaction: TransactionFeatures):
         risk_level=risk_level,
         latency_ms=round(latency_ms, 2)
     )
+class BatchRequest(BaseModel):
+    transactions: List[TransactionFeatures] = Field(
+        ..., min_length=1, max_length=1000,
+        description="List of transactions to score"
+    )
+
+class BatchPredictionResponse(BaseModel):
+    predictions: List[PredictionResponse]
+    total: int
+    fraud_count: int
+    latency_ms: float
+
+@app.post("/predict/batch", response_model=BatchPredictionResponse)
+async def predict_batch(request: BatchRequest):
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    start = time.time()
+
+    features = np.array([
+        [getattr(t, f) for f in feature_names]
+        for t in request.transactions
+    ])
+
+    features_scaled = scaler.transform(features)
+    fraud_probs = model.predict_proba(features_scaled)[:, 1]
+
+    predictions = []
+    for i, (transaction, prob) in enumerate(zip(request.transactions, fraud_probs)):
+        prob = float(prob)
+        if prob < 0.3:
+            risk_level = "LOW"
+        elif prob < 0.7:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "HIGH"
+
+        log_prediction(prob, prob >= 0.5, risk_level, transaction.Amount, 0)
+        predictions.append(PredictionResponse(
+            fraud_probability=round(prob, 6),
+            is_fraud=prob >= 0.5,
+            risk_level=risk_level,
+            latency_ms=0
+        ))
+
+    total_latency = (time.time() - start) * 1000
+    fraud_count = sum(1 for p in predictions if p.is_fraud)
+
+    logger.info(f"Batch: {len(predictions)} transactions, {fraud_count} fraud, {total_latency:.2f}ms")
+
+    return BatchPredictionResponse(
+        predictions=predictions,
+        total=len(predictions),
+        fraud_count=fraud_count,
+        latency_ms=round(total_latency, 2)
+    )
+
+@app.get("/stats")
+async def stats():
+    """Return prediction statistics from the SQLite log."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.execute("""
+        SELECT
+            COUNT(*) as total,
+            SUM(is_fraud) as fraud_count,
+            AVG(fraud_probability) as avg_prob,
+            AVG(latency_ms) as avg_latency
+        FROM predictions
+    """)
+    row = cursor.fetchone()
+    conn.close()
+
+    return {
+        "total_predictions": row[0],
+        "fraud_count": row[1],
+        "fraud_rate": round(row[1] / row[0], 4) if row[0] > 0 else 0,
+        "avg_fraud_probability": round(row[2], 4) if row[2] else 0,
+        "avg_latency_ms": round(row[3], 2) if row[3] else 0,
+    }
