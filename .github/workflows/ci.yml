@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install fastapi uvicorn xgboost scikit-learn numpy pydantic \
+                      python-dotenv pytest pytest-cov ruff pickle5
+
+      - name: Lint with ruff
+        run: |
+          ruff check src/api/
+
+      - name: Train model for CI
+        run: |
+          pip install pandas
+          python src/save_model.py
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/test_api.py -v --cov=src/api --cov-report=term-missing
+
+      - name: Build Docker image
+        run: |
+          docker build -t fraud-detection-api .
