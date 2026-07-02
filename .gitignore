@@ -3,4 +3,3 @@ mlruns/
 __pycache__/
 .env
 predictions.db
-models/*.pkl

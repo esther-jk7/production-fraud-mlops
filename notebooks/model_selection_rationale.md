@@ -33,3 +33,17 @@ PR-AUC improvement of +0.0177 is not negligible.
 - SHAP explanations on top 20 predictions
 - Evidently AI drift monitoring
 - Feature store with Feast
+
+## Week 6 — Serving Layer
+
+**FastAPI endpoints:**
+- POST /predict — single transaction, 18ms latency
+- POST /predict/batch — up to 1,000 transactions per call
+- GET /stats — prediction statistics from SQLite log
+- GET /health — model health check
+
+**SQLite logging:** every prediction logged with timestamp, probability,
+risk level, amount, and latency. Used for Week 7 drift detection.
+
+**CI/CD:** ruff lint + pytest (14/14, 86% coverage) + Docker build
+on every push to main.
