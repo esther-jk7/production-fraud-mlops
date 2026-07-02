@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install fastapi uvicorn xgboost scikit-learn numpy pydantic \
-                      python-dotenv pytest pytest-cov ruff
+                      python-dotenv pytest pytest-cov ruff httpx2
 
       - name: Lint with ruff
         run: |
