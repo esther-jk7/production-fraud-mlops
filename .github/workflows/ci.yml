@@ -28,11 +28,7 @@ jobs:
         run: |
           ruff check src/api/
 
-      - name: Train model for CI
-        run: |
-          pip install pandas
-          python src/save_model.py
-
+      
       - name: Run tests
         run: |
           python -m pytest tests/test_api.py -v --cov=src/api --cov-report=term-missing
