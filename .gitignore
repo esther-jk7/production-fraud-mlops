@@ -3,3 +3,6 @@ mlruns/
 __pycache__/
 .env
 predictions.db
+feature_repo/feature_repo/data/
+data/feast_transactions.parquet
+reports/
