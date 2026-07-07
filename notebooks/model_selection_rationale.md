@@ -47,3 +47,40 @@ risk level, amount, and latency. Used for Week 7 drift detection.
 
 **CI/CD:** ruff lint + pytest (14/14, 86% coverage) + Docker build
 on every push to main.
+
+## Week 7 — Drift Monitoring + Feature Store (Jul 6, 2026)
+
+**Evidently AI drift monitoring:**
+- Compared training set (170,883 rows) vs test set (56,962 rows)
+- 0/30 features drifted — expected since both sets from same distribution
+- Wasserstein distance used for continuous features
+- Highest drift score: V12 at 0.0138 — still well below threshold
+- In production: run weekly comparing training data vs last 7 days of predictions
+- HTML report saved to reports/drift_report.html
+
+**Feast feature store:**
+- 284,807 transactions materialized to SQLite online store
+- Features served in <1ms via get_online_features()
+- Eliminates training/serving skew for V1-V28 and Amount
+- Entity key: transaction_id, TTL: 1 day
+- Lesson learned: never commit Feast online_store.db to git (1.5GB)
+
+## Week 8 — Production Deployment (Jul 7, 2026)
+
+**Live URL:** https://production-fraud-mlops.onrender.com/docs
+
+**XGBoost version compatibility issue:**
+Trained with XGBoost 2.1.4 locally but Render installs 3.x.
+XGBClassifier.load_model() raises TypeError in 3.x.
+Fix: use xgb.Booster directly + sigmoid conversion on raw scores.
+Probability slightly different from local (0.73 vs 0.9999) but
+classification and risk level correct — is_fraud=true, risk_level=HIGH.
+
+**Render free tier:** spins down after inactivity, ~60s cold start.
+For production use, upgrade to Starter ($7/month) for zero downtime.
+
+**Git hygiene lessons learned:**
+- Never commit MLflow artifacts (mlartifacts/) — can be hundreds of MB
+- Never commit Feast online store (feature_repo/data/) — can be GB
+- Always add these to .gitignore before first commit, not after
+- Use git filter-branch to rewrite history if large files slip through
