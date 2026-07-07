@@ -32,8 +32,11 @@ async def lifespan(app: FastAPI):
     global model, scaler, feature_names
 
     logger.info("Loading model artifacts...")
+    import xgboost as xgb
+    booster = xgb.Booster()
+    booster.load_model("models/xgboost_fraud.json")
     model = XGBClassifier()
-    model.load_model("models/xgboost_fraud.json")
+    model._Booster = booster
 
     with open("models/scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
@@ -168,8 +171,8 @@ async def predict(transaction: TransactionFeatures):
     features_scaled = scaler.transform(features)
 
     # Predict
-    fraud_prob = float(model.predict_proba(features_scaled)[0, 1])
-
+    dmatrix = xgb.DMatrix(features_scaled)
+    fraud_prob = float(model._Booster.predict(dmatrix)[0])
     # Risk bucketing
     if fraud_prob < 0.3:
         risk_level = "LOW"
