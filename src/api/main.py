@@ -172,8 +172,10 @@ async def predict(transaction: TransactionFeatures):
 
     # Predict
     dmatrix = xgb.DMatrix(features_scaled)
-    fraud_prob = float(model._Booster.predict(dmatrix)[0])
-    # Risk bucketing
+    raw_score = float(model._Booster.predict(dmatrix)[0])
+    # XGBoost Booster returns raw scores, convert to probability with sigmoid
+    import math
+    fraud_prob = 1 / (1 + math.exp(-raw_score))    # Risk bucketing
     if fraud_prob < 0.3:
         risk_level = "LOW"
     elif fraud_prob < 0.7:
