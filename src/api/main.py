@@ -2,6 +2,8 @@ import pickle
 import logging
 import time
 import sqlite3
+import math
+import xgboost as xgb
 from datetime import datetime
 from typing import List
 from contextlib import asynccontextmanager
@@ -32,7 +34,7 @@ async def lifespan(app: FastAPI):
     global model, scaler, feature_names
 
     logger.info("Loading model artifacts...")
-    import xgboost as xgb
+    
     booster = xgb.Booster()
     booster.load_model("models/xgboost_fraud.json")
     model = XGBClassifier()
@@ -174,7 +176,6 @@ async def predict(transaction: TransactionFeatures):
     dmatrix = xgb.DMatrix(features_scaled)
     raw_score = float(model._Booster.predict(dmatrix)[0])
     # XGBoost Booster returns raw scores, convert to probability with sigmoid
-    import math
     fraud_prob = 1 / (1 + math.exp(-raw_score))    # Risk bucketing
     if fraud_prob < 0.3:
         risk_level = "LOW"
